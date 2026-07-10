@@ -116,7 +116,12 @@ export function SubmissionsProvider({ children }: { children: ReactNode }) {
         status: "pending",
       });
 
-      if (error) throw new Error("Failed to save submission");
+      if (error) {
+        if (error.message?.includes("DAILY_SUBMISSION_LIMIT_REACHED")) {
+          throw new Error("You've reached the limit of 2 submissions per day. Please try again tomorrow.");
+        }
+        throw new Error("Failed to save submission");
+      }
 
       const newSub: Submission = { ...sub, id, submittedAt, status: "pending", writerId };
       setSubmissions((prev) => [newSub, ...prev]);
