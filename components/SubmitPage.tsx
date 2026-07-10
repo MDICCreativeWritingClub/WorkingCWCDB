@@ -1,10 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { CheckCircle, AlertCircle, HelpCircle } from "lucide-react";
 import { useSubmissions } from "@/context/SubmissionsContext";
 import { useSiteConfig } from "@/context/SiteConfigContext";
+
+const DAILY_SUBMISSION_LIMIT = 2;
+
+function isSameDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
 
 const categoryOptions = [
   "Articles",
@@ -86,13 +96,26 @@ function useFieldFocus() {
 }
 
 export function SubmitPage() {
-  const { addSubmission } = useSubmissions();
+  const { submissions, addSubmission } = useSubmissions();
   const { config } = useSiteConfig();
   const [form, setForm] = useState<FormState>(empty);
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const focus = useFieldFocus();
+
+  const todaySubmissionCount = useMemo(() => {
+    const code = form.studentCode.trim().toLowerCase();
+    if (!code) return 0;
+    const now = new Date();
+    return submissions.filter(
+      (s) =>
+        s.studentCode.trim().toLowerCase() === code &&
+        isSameDay(new Date(s.submittedAt), now)
+    ).length;
+  }, [submissions, form.studentCode]);
+
+  const limitReached = todaySubmissionCount >= DAILY_SUBMISSION_LIMIT;
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) {
     const t = e.target;
@@ -102,6 +125,14 @@ export function SubmitPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+
+    if (limitReached) {
+      setSubmitError(
+        `You've reached the limit of ${DAILY_SUBMISSION_LIMIT} submissions per day. Please try again tomorrow.`
+      );
+      return;
+    }
+
     setSubmitting(true);
     setSubmitError(null);
     try {
@@ -116,7 +147,7 @@ export function SubmitPage() {
       });
       setSubmitted(true);
     } catch (err) {
-      setSubmitError("Something went wrong. Please try again.");
+      setSubmitError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -191,6 +222,19 @@ export function SubmitPage() {
         </p>
       </div>
 
+      {form.studentCode.trim() && !limitReached && todaySubmissionCount > 0 && (
+        <div className="rounded-xl px-4 py-3 mb-2 text-sm" style={{ backgroundColor: "#f0fdf4", color: "#15803d" }}>
+          You&apos;ve submitted {todaySubmissionCount}/{DAILY_SUBMISSION_LIMIT} pieces today.
+        </div>
+      )}
+
+      {limitReached && (
+        <div className="rounded-xl px-4 py-3 mb-2 text-sm" style={{ backgroundColor: "#fee2e2", color: "#b91c1c" }}>
+          You&apos;ve reached the daily limit of {DAILY_SUBMISSION_LIMIT} submissions for this
+          student code. Please come back tomorrow to submit more.
+        </div>
+      )}
+
       {submitError && (
         <div className="rounded-xl px-4 py-3 mb-2 text-sm" style={{ backgroundColor: "#fee2e2", color: "#b91c1c" }}>
           {submitError}
@@ -205,10 +249,10 @@ export function SubmitPage() {
               style={inputStyle} {...focus}
             />
           </Field>
-          <Field label="Student Code" hint="Your school-issued student ID (e.g. MIS-2024-0342)" required>
+          <Field label="Student Code" hint="Your school-issued student ID (e.g. 201300141)" required>
             <input
               required name="studentCode" value={form.studentCode} onChange={handleChange}
-              placeholder="e.g. MIS-2024-0342"
+              placeholder="e.g. 20xx00xxx"
               style={inputStyle} {...focus}
             />
           </Field>
@@ -276,11 +320,11 @@ export function SubmitPage() {
 
         <button
           type="submit"
-          disabled={submitting}
+          disabled={submitting || limitReached}
           className="w-full py-3 rounded-xl text-white hover:opacity-90 transition-opacity disabled:opacity-60"
           style={{ backgroundColor: "#14532d", fontWeight: 500 }}
         >
-          {submitting ? "Submitting..." : "Submit Your Work"}
+          {submitting ? "Submitting..." : limitReached ? "Daily Limit Reached" : "Submit Your Work"}
         </button>
       </form>
     </div>
