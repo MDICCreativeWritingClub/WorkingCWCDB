@@ -3,10 +3,10 @@
 import { useEffect, useReducer, useRef, useState } from "react";
 import Link from "next/link";
 import {
-  ArrowLeft, Undo2, Redo2, CheckCircle, XCircle, Lock,
+  ArrowLeft, Undo2, Redo2, CheckCircle, Lock,
 } from "lucide-react";
 import { useSubmissions } from "@/context/SubmissionsContext";
-import { isEditorUnlocked } from "@/lib/editorAuth";
+import { getReviewerSession } from "@/lib/reviewerAuth";
 
 interface Draft {
   title: string;
@@ -61,7 +61,7 @@ export function ReviewEditPage({ id }: { id: string }) {
   const initialized = useRef(false);
 
   useEffect(() => {
-    setAuthorized(isEditorUnlocked());
+    getReviewerSession().then((session) => setAuthorized(!!session));
   }, []);
 
   useEffect(() => {
@@ -282,15 +282,6 @@ export function ReviewEditPage({ id }: { id: string }) {
       )}
 
       <div className="flex flex-wrap gap-3">
-        <button
-          type="button"
-          onClick={() => handleSave("rejected")}
-          disabled={saving !== null}
-          className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm transition-all hover:opacity-90 disabled:opacity-60"
-          style={{ backgroundColor: "#fee2e2", color: "#991b1b", border: "1px solid #fca5a5" }}
-        >
-          <XCircle size={16} /> {saving === "rejected" ? "Saving..." : "Save & Reject"}
-        </button>
         <button
           type="button"
           onClick={() => handleSave("approved")}
