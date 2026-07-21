@@ -3,13 +3,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  CheckCircle, XCircle, Clock, Lock, Eye, EyeOff,
-  ClipboardList, Settings, PenSquare,
+  CheckCircle, XCircle, Clock, Lock, Eye, EyeOff, ClipboardList, Settings, PenSquare, LogOut,
 } from "lucide-react";
 import { useSubmissions, type Submission } from "@/context/SubmissionsContext";
-import { isEditorUnlocked, setEditorUnlocked } from "@/lib/editorAuth";
-
-const EDITOR_CODE = "CWC2026";
+import { getReviewerSession, signInReviewer, signOutReviewer } from "@/lib/reviewerAuth";
 
 type FilterTab = "pending" | "approved" | "rejected";
 
@@ -30,7 +27,13 @@ function StatusBadge({ status }: { status: Submission["status"] }) {
   );
 }
 
-function SubmissionCard({ sub }: { sub: Submission }) {
+function SubmissionCard({
+  sub,
+  updateStatus,
+}: {
+  sub: Submission;
+  updateStatus: (id: string, status: "approved" | "rejected") => void;
+}) {
   const [expanded, setExpanded] = useState(false);
   const date = new Date(sub.submittedAt).toLocaleDateString("en-GB", {
     day: "numeric", month: "short", year: "numeric",
@@ -110,13 +113,29 @@ function SubmissionCard({ sub }: { sub: Submission }) {
           <span style={{ color: "#9ca3af", fontSize: "0.7rem" }}>Submitted {date}</span>
 
           {sub.status === "pending" && (
-            <Link
-              href={`/review/${sub.id}`}
-              className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm transition-all hover:opacity-90"
-              style={{ backgroundColor: "#14532d", color: "#ffffff" }}
-            >
-              <PenSquare size={14} /> Review &amp; Edit
-            </Link>
+            <div className="flex gap-2">
+              <button
+                onClick={() => updateStatus(sub.id, "rejected")}
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm transition-all hover:opacity-90"
+                style={{ backgroundColor: "#fee2e2", color: "#991b1b", border: "1px solid #fca5a5" }}
+              >
+                <XCircle size={14} /> Reject
+              </button>
+              <button
+                onClick={() => updateStatus(sub.id, "approved")}
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm transition-all hover:opacity-90"
+                style={{ backgroundColor: "#dcfce7", color: "#166534", border: "1px solid #bbf7d0" }}
+              >
+                <CheckCircle size={14} /> Approve
+              </button>
+              <Link
+                href={`/review/${sub.id}`}
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm transition-all hover:opacity-90"
+                style={{ backgroundColor: "#14532d", color: "#ffffff" }}
+              >
+                <PenSquare size={14} /> Edit
+              </Link>
+            </div>
           )}
         </div>
       </div>
@@ -125,26 +144,43 @@ function SubmissionCard({ sub }: { sub: Submission }) {
 }
 
 export function ReviewPanel() {
-  const { submissions } = useSubmissions();
+  const { submissions, updateStatus } = useSubmissions();
+  const [checkingSession, setCheckingSession] = useState(true);
   const [unlocked, setUnlocked] = useState(false);
-  const [code, setCode] = useState("");
-  const [error, setError] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [signingIn, setSigningIn] = useState(false);
   const [tab, setTab] = useState<FilterTab>("pending");
-  const [showCode, setShowCode] = useState(false);
 
   useEffect(() => {
-    if (isEditorUnlocked()) setUnlocked(true);
+    getReviewerSession().then((session) => {
+      setUnlocked(!!session);
+      setCheckingSession(false);
+    });
   }, []);
 
-  function handleUnlock(e: React.FormEvent) {
+  async function handleUnlock(e: React.FormEvent) {
     e.preventDefault();
-    if (code.trim() === EDITOR_CODE) {
-      setEditorUnlocked();
-      setUnlocked(true);
-      setError(false);
-    } else {
-      setError(true);
+    setSigningIn(true);
+    setError(null);
+    const { error: signInError } = await signInReviewer(email, password);
+    if (signInError) {
+      setError(signInError);
+      setSigningIn(false);
+      return;
     }
+    setUnlocked(true);
+    setSigningIn(false);
+  }
+
+  async function handleLogout() {
+    await signOutReviewer();
+    setUnlocked(false);
+  }
+
+  if (checkingSession) {
+    return <div className="max-w-sm mx-auto px-5 pt-32 text-center" style={{ color: "#9ca3af" }}>Loading...</div>;
   }
 
   if (!unlocked) {
@@ -164,44 +200,51 @@ export function ReviewPanel() {
             Review Panel
           </h1>
           <p style={{ color: "#6b7280", fontSize: "0.85rem", marginBottom: "1.75rem", lineHeight: "1.6" }}>
-            This area is for editors and faculty only. Enter your editor code to continue.
+            This area is for editors and faculty only. Log in with your reviewer account to continue.
           </p>
           <form onSubmit={handleUnlock} className="flex flex-col gap-3">
-            <div className="relative">
-              <input
-                type={showCode ? "text" : "password"}
-                value={code}
-                onChange={(e) => { setCode(e.target.value); setError(false); }}
-                placeholder="Editor code"
-                style={{
-                  width: "100%",
-                  padding: "0.65rem 2.5rem 0.65rem 1rem",
-                  borderRadius: "0.75rem",
-                  border: `1px solid ${error ? "#fca5a5" : "#bbf7d0"}`,
-                  fontSize: "0.875rem",
-                  outline: "none",
-                  color: "#111827",
-                  textAlign: "center",
-                  letterSpacing: "0.08em",
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => setShowCode(!showCode)}
-                style={{ position: "absolute", right: "0.75rem", top: "50%", transform: "translateY(-50%)", color: "#9ca3af" }}
-              >
-                {showCode ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
-            </div>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => { setEmail(e.target.value); setError(null); }}
+              placeholder="Email"
+              autoComplete="email"
+              style={{
+                width: "100%",
+                padding: "0.65rem 1rem",
+                borderRadius: "0.75rem",
+                border: `1px solid ${error ? "#fca5a5" : "#bbf7d0"}`,
+                fontSize: "0.875rem",
+                outline: "none",
+                color: "#111827",
+              }}
+            />
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => { setPassword(e.target.value); setError(null); }}
+              placeholder="Password"
+              autoComplete="current-password"
+              style={{
+                width: "100%",
+                padding: "0.65rem 1rem",
+                borderRadius: "0.75rem",
+                border: `1px solid ${error ? "#fca5a5" : "#bbf7d0"}`,
+                fontSize: "0.875rem",
+                outline: "none",
+                color: "#111827",
+              }}
+            />
             {error && (
-              <p style={{ color: "#dc2626", fontSize: "0.8rem" }}>Incorrect code. Please try again.</p>
+              <p style={{ color: "#dc2626", fontSize: "0.8rem" }}>{error}</p>
             )}
             <button
               type="submit"
-              className="w-full py-2.5 rounded-xl text-white hover:opacity-90 transition-opacity"
+              disabled={signingIn}
+              className="w-full py-2.5 rounded-xl text-white hover:opacity-90 transition-opacity disabled:opacity-60"
               style={{ backgroundColor: "#14532d", fontWeight: 500 }}
             >
-              Enter
+              {signingIn ? "Logging in..." : "Log In"}
             </button>
           </form>
         </div>
@@ -235,14 +278,24 @@ export function ReviewPanel() {
             Review and action student submissions. Approved pieces move to publication.
           </p>
         </div>
-        <Link
-          href="/control"
-          className="flex items-center gap-2 px-4 py-2 rounded-full text-sm hover:opacity-90 transition-opacity shrink-0"
-          style={{ backgroundColor: "#fef9c3", color: "#92400e", border: "1px solid #fde68a" }}
-          title="Admin Control Panel"
-        >
-          <Settings size={14} /> Control Panel
-        </Link>
+        <div className="flex gap-2 shrink-0">
+          <Link
+            href="/control"
+            className="flex items-center gap-2 px-4 py-2 rounded-full text-sm hover:opacity-90 transition-opacity"
+            style={{ backgroundColor: "#fef9c3", color: "#92400e", border: "1px solid #fde68a" }}
+            title="Admin Control Panel"
+          >
+            <Settings size={14} /> Control Panel
+          </Link>
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-2 px-4 py-2 rounded-full text-sm hover:opacity-90 transition-opacity"
+            style={{ backgroundColor: "#f3f4f6", color: "#374151" }}
+            title="Log out"
+          >
+            <LogOut size={14} /> Log Out
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-3 gap-4 mb-8">
@@ -282,7 +335,7 @@ export function ReviewPanel() {
       ) : (
         <div className="flex flex-col gap-4">
           {filtered.map((sub) => (
-            <SubmissionCard key={sub.id} sub={sub} />
+            <SubmissionCard key={sub.id} sub={sub} updateStatus={updateStatus} />
           ))}
         </div>
       )}
