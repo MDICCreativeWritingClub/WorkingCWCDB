@@ -87,6 +87,21 @@ export function SubmissionsProvider({ children }: { children: ReactNode }) {
     async (sub: Omit<Submission, "id" | "submittedAt" | "status">): Promise<string> => {
       let writerId = getWriterId();
 
+      if (writerId) {
+        // The cached writerId may point at a row that's since been
+        // deleted (e.g. during cleanup) — localStorage has no way to
+        // know that, so confirm it still exists before trusting it.
+        const { data: existingWriter } = await supabase
+          .from("writers")
+          .select("id")
+          .eq("id", writerId)
+          .maybeSingle();
+
+        if (!existingWriter) {
+          writerId = null;
+        }
+      }
+
       if (!writerId) {
         const { data: writer, error: writerError } = await supabase
           .from("writers")
@@ -104,7 +119,7 @@ export function SubmissionsProvider({ children }: { children: ReactNode }) {
           .eq("id", writerId);
       }
 
-      const id = `sub-${Date.now()}`;
+      const id = `sub-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const submittedAt = new Date().toISOString();
 
       const { error } = await supabase.from("submissions").insert({
