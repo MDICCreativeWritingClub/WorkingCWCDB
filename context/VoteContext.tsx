@@ -91,15 +91,16 @@ export function VoteProvider({ children }: { children: ReactNode }) {
     setVotes((prev) => ({ ...prev, [id]: (prev[id] ?? 0) + 1 }));
     setVoted((prev) => ({ ...prev, [id]: true }));
 
-    // Upsert vote count
-    const { data: existing } = await supabase
-      .from("votes")
-      .select("count")
-      .eq("article_id", id)
-      .single();
+    // Atomic increment — avoids the read-then-write race where two
+    // concurrent votes on the same article can silently overwrite
+    // each other and drop a vote.
+    const { data: newCount, error } = await supabase.rpc("increment_vote", {
+      p_article_id: id,
+    });
 
-    const newCount = (existing?.count ?? 0) + 1;
-    await supabase.from("votes").upsert({ article_id: id, count: newCount });
+    if (!error && typeof newCount === "number") {
+      setVotes((prev) => ({ ...prev, [id]: newCount }));
+    }
 
     // Log this session voted
     await supabase.from("voter_log").upsert({
